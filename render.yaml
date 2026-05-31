@@ -1,0 +1,49 @@
+## render.yaml — Render.com デプロイ設定
+## ドキュメント: https://render.com/docs/blueprint-spec
+##
+## サービス構成:
+##   1. zaimu-checker       — Streamlit メインアプリ
+##   2. zaimu-checker-webhook — Stripe Webhook 受信サーバー（FastAPI）
+
+services:
+  # ── 1. Streamlit メインアプリ ─────────────────────────────
+  - type: web
+    name: zaimu-checker
+    env: python
+    region: singapore          # 日本ユーザー向けに最寄りリージョン
+    plan: free                 # 無料プランで開始（有料転換後にstarter以上へ変更）
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false            # Renderダッシュボードで手動設定
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+      - key: STRIPE_PAYMENT_LINK
+        sync: false
+      - key: APP_URL
+        sync: false            # デプロイ後のURL（例: https://zaimu-checker.onrender.com）
+
+  # ── 2. Stripe Webhook サーバー ────────────────────────────
+  - type: web
+    name: zaimu-checker-webhook
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn webhook:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false            # service_role キー（RLSをバイパスするため必須）
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false            # Stripe Dashboard > Webhooks で生成
