@@ -30,6 +30,8 @@ ALTER TABLE usage_logs  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_plans  ENABLE ROW LEVEL SECURITY;
 
 -- 自分のログのみ参照・追加可能
+DROP POLICY IF EXISTS "own usage read"   ON usage_logs;
+DROP POLICY IF EXISTS "own usage insert" ON usage_logs;
 CREATE POLICY "own usage read"
     ON usage_logs FOR SELECT
     USING (auth.uid() = user_id);
@@ -39,6 +41,7 @@ CREATE POLICY "own usage insert"
     WITH CHECK (auth.uid() = user_id);
 
 -- 自分のプランのみ参照可能（更新はservice_role経由のwebhookのみ）
+DROP POLICY IF EXISTS "own plan read" ON user_plans;
 CREATE POLICY "own plan read"
     ON user_plans FOR SELECT
     USING (auth.uid() = user_id);
