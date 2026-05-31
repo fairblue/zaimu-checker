@@ -48,3 +48,9 @@ CREATE POLICY "own plan read"
 
 -- service_roleはRLSをバイパス（webhook.pyのupgrade/downgradeに必要）
 -- ※ Supabaseはデフォルトでservice_roleがRLSをバイパスするため追加ポリシー不要
+
+-- ── テーブル権限付与 ──────────────────────────────────────
+-- RLSポリシーとは別に、authenticatedロールへの基本アクセス権が必要
+-- （「新しいテーブルを自動的に公開する」をOFFにした場合は手動付与が必須）
+GRANT SELECT, INSERT ON public.usage_logs TO authenticated;
+GRANT SELECT ON public.user_plans TO authenticated;

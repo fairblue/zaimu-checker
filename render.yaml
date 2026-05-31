@@ -15,8 +15,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
     envVars:
-      - key: GOOGLE_API_KEY
-        sync: false            # Renderダッシュボードで手動設定
+      - key: ANTHROPIC_API_KEY
+        sync: false            # Renderダッシュボードで手動設定（くまちゃんAI解説）
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY
