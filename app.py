@@ -22,30 +22,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Gemini API（任意 — キーがあればAI解説モードが有効になる）
-_gemini_model = None
-_gemini_ready = False
-try:
-    import google.generativeai as genai
-    _google_api_key = os.getenv("GOOGLE_API_KEY")
-    if _google_api_key:
-        genai.configure(api_key=_google_api_key)
-        _gemini_model = genai.GenerativeModel(
-            "gemini-2.5-flash",
-            system_instruction=(
-                "あなたは「くまちゃん」という名前の財務分析の専門家です。"
-                "初心者の投資家に対して、以下のルールで話してください：\n"
-                "- 難しい専門用語は使わず、具体的な例えで説明する\n"
-                "- クマらしい温かみのある口調（「〜だよ！」「〜だね。」「〜してみよう！」）\n"
-                "- 数字の良し悪しだけでなく、業種・ビジネスモデルの文脈も考慮して解説する\n"
-                "- 400文字以内でコンパクトに\n"
-                "- マークダウンの見出しは使わず、自然な文章で"
-            ),
-        )
-        _gemini_ready = True
-except ImportError:
-    pass
-
 # Claude API（任意 — ANTHROPIC_API_KEY があれば有効）
 _anthropic_client = None
 try:
