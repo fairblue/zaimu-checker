@@ -8,14 +8,10 @@ import os
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import stripe
 from dotenv import load_dotenv
-from auth import show_auth_wall, logout, FREE_DAILY_LIMIT, is_supabase_configured
-from db import get_today_usage_count, log_usage, get_user_plan
 
 load_dotenv()
 
-# ページ設定（最初に呼ぶ必要がある）
 st.set_page_config(
     page_title="🐻 財務安全チェッカー",
     page_icon="🐻",
@@ -32,118 +28,9 @@ try:
 except ImportError:
     pass
 
-# ── 認証ゲート ────────────────────────────────────────────
-# Supabase未設定時は開発モードとして全機能開放する
-
-if not show_auth_wall():
-    st.stop()
-
-# ── ユーザー情報・プラン取得 ──────────────────────────────
-
-user = st.session_state.get("user")
-access_token = st.session_state.get("access_token")
-user_id = user.id if user else None
-user_email = user.email if user else "ゲスト"
-
-# プランはセッション中キャッシュ（ページリロードのたびにDB問い合わせを抑制）
-if st.session_state.get("user_plan") is None and user_id and is_supabase_configured():
-    st.session_state["user_plan"] = get_user_plan(user_id, access_token)
-
-user_plan = st.session_state.get("user_plan", "free")
-
-# ── アップグレード完了通知（Stripe success_url からの復帰）──
-
-if st.query_params.get("upgraded") == "true":
-    st.session_state["user_plan"] = None  # 強制再取得
-    st.query_params.clear()
-    st.success("🎉 プレミアムプランへのアップグレードが完了しました！")
-
-# ── Stripe Checkout URL 生成 ─────────────────────────────
-
-def create_checkout_url() -> str | None:
-    """
-    目的: StripeのCheckoutセッションURLを生成する。
-          未設定時はNoneを返す（UIでPayment Linkにフォールバック）
-    戻り値: StripeチェックアウトURL文字列 または None
-    """
-    secret_key = os.getenv("STRIPE_SECRET_KEY", "")
-    price_id = os.getenv("STRIPE_PRICE_ID", "")
-    app_url = os.getenv("APP_URL", "http://localhost:8501")
-    if not secret_key or not price_id:
-        return None
-    try:
-        stripe.api_key = secret_key
-        session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            mode="subscription",
-            customer_email=user_email,
-            line_items=[{"price": price_id, "quantity": 1}],
-            metadata={"user_id": user_id or ""},
-            success_url=app_url + "?upgraded=true",
-            cancel_url=app_url,
-        )
-        return session.url
-    except Exception:
-        return None
-
-# ── アップグレード壁 ──────────────────────────────────────
-
-def _show_upgrade_wall():
-    """
-    目的: 無料枠上限到達時にアップグレードを促すブロッキングUIを表示する
-    """
-    st.warning(f"🐻 今日の無料枠（{FREE_DAILY_LIMIT}銘柄）を使い切ったよ！明日またチェックできます。")
-    st.markdown("---")
-    st.subheader("⭐ プレミアムプランで無制限に使おう")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("""
-**無料プラン**
-- 1日3銘柄まで
-- ルールベース解説
-- 基本4指標
-        """)
-    with col2:
-        st.markdown("""
-**⭐ プレミアム（月額980円）**
-- **無制限** の銘柄分析
-- **Claude AI** によるパーソナライズ解説
-- ウォッチリスト（最大20銘柄）
-- 2銘柄比較・CSVエクスポート
-        """)
-
-    checkout_url = create_checkout_url()
-    target = checkout_url or os.getenv("STRIPE_PAYMENT_LINK", "")
-    if target:
-        st.link_button(
-            "💳 今すぐプレミアムにアップグレード（月額980円）",
-            target,
-            use_container_width=True,
-            type="primary",
-        )
-    else:
-        st.info("準備中です。しばらくお待ちください。")
-
 # ── サイドバー ────────────────────────────────────────────
 
 with st.sidebar:
-    st.header("👤 アカウント")
-    st.caption(user_email)
-
-    if user_plan == "premium":
-        st.success("⭐ プレミアムプラン")
-    else:
-        st.info("🆓 無料プラン（1日3銘柄）")
-        if user_id and is_supabase_configured():
-            used = get_today_usage_count(user_id, access_token)
-            remaining = max(0, FREE_DAILY_LIMIT - used)
-            st.progress(used / FREE_DAILY_LIMIT, text=f"本日の残り：{remaining}/{FREE_DAILY_LIMIT} 回")
-
-    if is_supabase_configured() and st.button("ログアウト", use_container_width=True):
-        logout()
-
-    st.divider()
     st.header("📝 数値の確認・修正")
     st.caption("自動取得値を上書き可能（単位：十億USD）")
 
@@ -159,7 +46,7 @@ with st.sidebar:
     if _anthropic_client:
         st.success("🤖 Claude AI 解説モード ON")
     else:
-        st.info("💡 ANTHROPIC_API_KEY を .env に設定するとAI解説が有効になります")
+        st.info("💡 ANTHROPIC_API_KEY を設定するとAI解説が有効になります")
 
 # ── メインUI ──────────────────────────────────────────────
 
@@ -249,13 +136,6 @@ with col_btn:
 if fetch_btn and ticker_input:
     ticker_clean = ticker_input.upper().strip()
 
-    # 無料プランの上限チェック
-    if user_plan == "free" and user_id and is_supabase_configured():
-        used_today = get_today_usage_count(user_id, access_token)
-        if used_today >= FREE_DAILY_LIMIT:
-            _show_upgrade_wall()
-            st.stop()
-
     with st.spinner(f"{ticker_clean} のデータを取得中..."):
         data = fetch_financials(ticker_clean)
         info = fetch_company_info(ticker_clean)
@@ -269,12 +149,6 @@ if fetch_btn and ticker_input:
         st.session_state["ticker"]       = ticker_clean
         st.session_state["company_name"] = info["name"]
         st.session_state["sector"]       = info["sector"]
-
-        # 使用ログを記録（Supabase設定済みのときのみ）
-        if user_id and is_supabase_configured():
-            log_usage(user_id, ticker_clean, access_token)
-            st.session_state["user_plan"] = None  # プランキャッシュをリセット
-
         st.success(f"✅ {info['name']}（{ticker_clean}）のデータを取得しました（単位：十億USD）")
     else:
         st.error("❌ データ取得に失敗しました。ティッカーを確認するか、サイドバーで手動入力してください。")
@@ -406,7 +280,6 @@ def show_bear_comments_fallback():
     """
     目的: Claude APIなし時のフォールバック解説（ルールベース）
     """
-    # 流動比率コメント
     if current_ratio is not None:
         if current_ratio >= 2.0:
             show_bear_comment(
@@ -425,7 +298,6 @@ def show_bear_comments_fallback():
                 "ただ業種によっては普通のこともあるから、文脈を見てね。"
             )
 
-    # 在庫リスクの検出（流動比率と当座比率の乖離が大きい場合）
     if current_ratio is not None and quick_ratio is not None:
         gap = current_ratio - quick_ratio
         if gap > 0.8:
@@ -435,7 +307,6 @@ def show_bear_comments_fallback():
                 "その在庫がちゃんと売れる見込みがあるかどうか、確認してみよう！"
             )
 
-    # ROEコメント
     if roe is not None:
         roe_pct = roe * 100
         if roe_pct >= 20:
@@ -453,7 +324,6 @@ def show_bear_comments_fallback():
                 "株主のお金をうまく使えてないかも。理由があるか調べてみよう。"
             )
 
-    # デュポン戦略コメント
     if strategy == "製品差別化戦略":
         show_bear_comment(
             "利益率が高いね！これは **製品差別化戦略** タイプだよ。"
@@ -476,7 +346,6 @@ has_data = any([ca > 0, cl > 0, ni != 0, eq > 0])
 if not has_data:
     show_bear_comment("ティッカーを入力して「データ取得」ボタンを押してね！気になる銘柄の財務を一緒に調べよう🐻")
 elif _anthropic_client and st.session_state["ticker"]:
-    # Gemini APIによる統合解説
     with st.spinner("🐻 くまちゃんが分析中..."):
         ai_comment = generate_bear_comment_ai(
             ticker=st.session_state["ticker"],
@@ -494,18 +363,6 @@ elif _anthropic_client and st.session_state["ticker"]:
         show_bear_comments_fallback()
 else:
     show_bear_comments_fallback()
-
-# ── プレミアムCTA（無料ユーザーの解説下部に常時表示）────
-
-if user_plan == "free" and has_data and is_supabase_configured():
-    st.divider()
-    with st.container(border=True):
-        st.markdown("**⭐ プレミアムプランで、くまちゃんのAI解説が使い放題に！**")
-        st.caption("月額980円 • いつでもキャンセル可 • 無制限の銘柄分析")
-        checkout_url = create_checkout_url()
-        target = checkout_url or os.getenv("STRIPE_PAYMENT_LINK", "")
-        if target:
-            st.link_button("今すぐアップグレード →", target, type="primary")
 
 st.divider()
 st.caption("⚠️ このアプリは教育目的です。投資判断はご自身の責任でお願いします。データはYahoo Financeから取得しています。")
